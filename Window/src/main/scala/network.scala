@@ -16,7 +16,7 @@ object Network {
     }
 
     val conf = new SparkConf().setAppName("Kafka Aggregate")
-    val ssc = new StreamingContext(conf, Seconds(5))
+    val ssc = new StreamingContext(conf, Seconds(30))
     val sqlContext = new SQLContext(ssc.sparkContext)
     val hiveContext = new HiveContext(ssc.sparkContext)
 
@@ -32,8 +32,18 @@ object Network {
     val pairs = words.map(word => (word, 1))
     val events = pairs.reduceByKey(_ + _)
 
+    val people = hiveContext.createDataFrame(hiveContext.sparkContext.emptyRDD[Word])
+    people.registerTempTable("windowed")
+
     events.map(p => Word(p._1, p._2)).window(Minutes(1000)).foreachRDD { rdd =>
-      rdd.toDF().persist(StorageLevel.OFF_HEAP).registerTempTable("windowed")
+      if (rdd.count() > 0) {
+        rdd.toDF().cache().registerTempTable("windowed")
+      }
+    }
+
+    events.map(p => Word(p._1, p._2)).window(Seconds(30)).foreachRDD { (rdd, time) =>
+      val all = hiveContext.sql("SELECT count(*) FROM windowed")
+      println("in last 30s: " + rdd.count() + " and total is " + all.first().getLong(0))
     }
 
     ssc.start()             // Start the computation
