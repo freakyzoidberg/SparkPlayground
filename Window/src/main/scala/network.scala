@@ -16,32 +16,33 @@ object Network {
     }
 
     val conf = new SparkConf().setAppName("Kafka Aggregate")
-    val ssc = new StreamingContext(conf, Seconds(30))
+    val ssc = new StreamingContext(conf, Seconds(1))
     val sqlContext = new SQLContext(ssc.sparkContext)
     val hiveContext = new HiveContext(ssc.sparkContext)
 
     HiveThriftServer2.startWithContext(hiveContext)
     import hiveContext.implicits._
 
-    // Split each line into words
     val Array(zkQuorum, group, topics, numThreads) = args
     val topicMap = topics.split(",").map((_, numThreads.toInt)).toMap
     val lines = KafkaUtils.createStream(ssc, zkQuorum, group, topicMap).map(_._2)
 
-    val words = lines.flatMap(_.split(" "))
-    val pairs = words.map(word => (word, 1))
-    val events = pairs.reduceByKey(_ + _)
-
     val people = hiveContext.createDataFrame(hiveContext.sparkContext.emptyRDD[Word])
     people.registerTempTable("windowed")
 
-    events.map(p => Word(p._1, p._2)).window(Minutes(1000)).foreachRDD { rdd =>
+    lines.window(Minutes(1440)).foreachRDD{ rdd =>
       if (rdd.count() > 0) {
-        rdd.toDF().cache().registerTempTable("windowed")
+        hiveContext.read.json(rdd).toDF().registerTempTable("windowed")
       }
     }
 
-    events.map(p => Word(p._1, p._2)).window(Seconds(30)).foreachRDD { (rdd, time) =>
+    lines.window(Minutes(1), Minutes(1)).foreachRDD { rdd =>
+      if (rdd.count() > 0) {
+        hiveContext.read.json(rdd).toDF().write.mode(SaveMode.Append).parquet("persisted")
+      }
+    }
+
+    lines.window(Seconds(30)).foreachRDD { (rdd, time) =>
       val all = hiveContext.sql("SELECT count(*) FROM windowed")
       println("in last 30s: " + rdd.count() + " and total is " + all.first().getLong(0))
     }

@@ -23,7 +23,7 @@ object Network {
     ssc.remember(Minutes(1440))
 
     HiveThriftServer2.startWithContext(hiveContext)
-    import sqlContext.implicits._    
+    import sqlContext.implicits._
 
     // Split each line into words
     val Array(zkQuorum, group, topics, numThreads) = args
