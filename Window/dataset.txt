@@ -1,0 +1,4 @@
+{"messageId":1, "topic":"A", brokerId:"A", "orderId":"1", "messageType":"add"}
+{"messageId":2, "topic":"A", brokerId:"B", "orderId":"2", "messageType":"delete"}
+{"messageId":3, "topic":"B", orderId:"1"}
+{"messageId":4, "topic":"B", orderId:"2"}
